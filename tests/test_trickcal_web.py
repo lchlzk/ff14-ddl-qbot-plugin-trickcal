@@ -219,6 +219,40 @@ class BoardWebApiTests(unittest.TestCase):
         return self.client.post(path, json=body, headers=self.headers)
 
     @patch("qbot_trickcal.trickcal_web.board.catalogue", new_callable=AsyncMock)
+    def test_unavailable_roles_are_hidden_but_progress_survives_until_release(self, fetch):
+        from test_trickcal_board import availability_payload, export_document
+
+        payload = availability_payload()
+        fetch.return_value = trickcal_board._catalog_from_payload(payload)
+        boards = trickcal_board.BoardStore(self.store)
+        raw = export_document(selected=[100], planned=[])
+        raw["units"].append([10080, 3])
+        raw["boards"].append([10080, {"selectedNodes": [200], "plannedNodes": []}])
+        boards.replace(PRIVATE, json.dumps(raw))
+        before = boards.get(PRIVATE)
+        state = self.client.get("/tr-board/api/state").json()["data"]
+        self.assertEqual([u["id"] for u in state["units"]], [10016])
+        self.assertEqual(state["summary"]["owned"], 1)
+        self.assertEqual(state["summary"]["catalog_units"], 1)
+        self.assertEqual(state["summary"]["selected"], 1)
+        self.assertEqual(state["summary"]["gold_crayons"], 2)
+        self.assertGreaterEqual(self.post("/tr-board/api/units/10080/owned", {"owned": True}).status_code, 400)
+        self.assertGreaterEqual(self.post("/tr-board/api/nodes", {
+            "unit": 10080, "layer": 1, "group": "攻击", "selected": True,
+        }).status_code, 400)
+        self.assertEqual(self.post("/tr-board/api/units/owned-all", {}).status_code, 200)
+        self.assertEqual(self.post("/tr-board/api/nodes/bulk", {
+            "layer": 1, "group": "all", "selected": True,
+        }).status_code, 200)
+        self.assertEqual(boards.get(PRIVATE)[0], before[0])
+        payload["unavailable_units"] = []
+        fetch.return_value = trickcal_board._catalog_from_payload(payload)
+        state = self.client.get("/tr-board/api/state").json()["data"]
+        self.assertEqual(state["summary"]["owned"], 2)
+        self.assertEqual(state["summary"]["selected"], 2)
+        self.assertEqual(boards.get(PRIVATE)[0], before[0])
+
+    @patch("qbot_trickcal.trickcal_web.board.catalogue", new_callable=AsyncMock)
     def test_page_state_individual_and_bulk_changes_share_bot_storage(self, fetch):
         fetch.return_value = catalog()
         page = self.client.get("/tr-board/")

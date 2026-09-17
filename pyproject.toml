@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ff14-ddl-qbot-plugin-trickcal"
-version = "0.2.0"
+version = "0.2.1"
 description = "嘟嘟脸与蜡笔板 plugin for ff14-ddl-qbot"
 readme = "README.md"
 requires-python = ">=3.12"

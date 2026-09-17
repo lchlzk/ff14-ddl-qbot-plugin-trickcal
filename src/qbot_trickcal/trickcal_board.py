@@ -43,7 +43,7 @@ MAX_CRAYON_NOTE_BYTES = 512 * 1024
 CATALOG_TTL = 7 * 24 * 3600
 CATALOG_REFRESH_RETRY = 10 * 60
 IMPORT_SESSION_TTL = 10 * 60
-CATALOG_VERSION = 4
+CATALOG_VERSION = 5
 GOLD_CRAYON_ITEM_ID = 610004
 PERCENT_STATS = {88, 89, 92, 93, 95, 97, 99, 101, 103}
 DOCUMENT_KEYS = {
@@ -144,6 +144,7 @@ class Catalog:
     fetched: float
     stale: bool = False
     sources: tuple[str, ...] = ("Soshage",)
+    unavailable_units: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -644,7 +645,7 @@ class BoardStore:
 
 
 def _cache_path() -> Path:
-    return Path(os.environ.get("BOT_DATA_DIR", "data")) / "cache" / "trickcal-board" / "catalog-v4.json"
+    return Path(os.environ.get("BOT_DATA_DIR", "data")) / "cache" / "trickcal-board" / f"catalog-v{CATALOG_VERSION}.json"
 
 
 def _balanced_js_value(source: str, start: int, opening: str, closing: str) -> tuple[str, int]:
@@ -859,6 +860,7 @@ def _merge_crayon_note(
     now = time.time() if now is None else now
     units = payload["units"]
     nodes = payload["nodes"]
+    unavailable = set(payload["unavailable_units"])
     units_by_id = {row[0]: row for row in units}
     alias_index: dict[str, set[int]] = {}
     name_index: dict[str, set[int]] = {}
@@ -881,6 +883,10 @@ def _merge_crayon_note(
         if character["alias"]:
             candidates.update(alias_index.get(_normal(character["alias"]), ()))
         candidates.update(name_index.get(_normal(character["name"]), ()))
+        # A supplemental source must not override Soshage's explicit availability.
+        # Keep the hidden rows in the cache so both IDs and aliases remain known.
+        if candidates & unavailable:
+            continue
         if len(candidates) > 1:
             raise BoardCatalogError(
                 f"Crayon-note 角色“{character['name']}”对应多个 Soshage 角色，已忽略本次更新。"
@@ -939,6 +945,10 @@ def _catalog_from_payload(value: Any, *, stale: bool = False) -> Catalog | None:
     raw_units, raw_nodes = value.get("units"), value.get("nodes")
     if not isinstance(fetched, (int, float)) or not isinstance(raw_units, list) or not isinstance(raw_nodes, list):
         return None
+    unavailable_ids = _unique_positive(value.get("unavailable_units"))
+    if unavailable_ids is None:
+        return None
+    unavailable = set(unavailable_ids)
     units: dict[int, dict[str, Any]] = {}
     for row in raw_units:
         if not isinstance(row, list) or len(row) != 4 or not _positive_int(row[0]):
@@ -952,6 +962,9 @@ def _catalog_from_payload(value: Any, *, stale: bool = False) -> Catalog | None:
         units[row[0]] = {
             "name": name[:60], "alias": alias[:60], "personality": personality,
         }
+    if not unavailable.issubset(units):
+        return None
+    units = {uid: row for uid, row in units.items() if uid not in unavailable}
     nodes: dict[int, dict[str, Any]] = {}
     by_unit: dict[int, list[int]] = {}
     for row in raw_nodes:
@@ -965,6 +978,8 @@ def _catalog_from_payload(value: Any, *, stale: bool = False) -> Catalog | None:
             or not isinstance(need_gold, int) or not isinstance(gold_crayons, int)
         ):
             return None
+        if unit_uid not in units:
+            continue
         nodes[uid] = {
             "unit": unit_uid, "step": step, "type": node_type,
             "stat_type": stat_type, "stat_value": stat_value, "gold": max(0, need_gold),
@@ -980,7 +995,7 @@ def _catalog_from_payload(value: Any, *, stale: bool = False) -> Catalog | None:
     sources = tuple(dict.fromkeys(raw_sources))
     return Catalog(
         units, nodes, {key: tuple(value) for key, value in by_unit.items()},
-        float(fetched), stale, sources,
+        float(fetched), stale, sources, frozenset(unavailable),
     )
 
 
@@ -1095,6 +1110,7 @@ def _reduce_catalog(units_value: Any, boards_value: Any) -> dict[str, Any]:
     if not isinstance(boards_value, list) or len(boards_value) > 100_000:
         raise BoardCatalogError("Soshage 蜡笔节点目录格式不正确。")
     units: list[list[Any]] = []
+    unavailable: set[int] = set()
     for row in units_value:
         if not isinstance(row, dict) or not _positive_int(row.get("uid")):
             continue
@@ -1104,6 +1120,8 @@ def _reduce_catalog(units_value: Any, boards_value: Any) -> dict[str, Any]:
         if type(personality) is not int or personality not in {0, 1, 2, 3, 4}:
             personality = -1
         units.append([row["uid"], name[:60], alias[:60], personality])
+        if row.get("available") is False:
+            unavailable.add(row["uid"])
     nodes: list[list[Any]] = []
     for row in boards_value:
         if not isinstance(row, dict):
@@ -1133,6 +1151,7 @@ def _reduce_catalog(units_value: Any, boards_value: Any) -> dict[str, Any]:
     return {
         "version": CATALOG_VERSION, "fetched": time.time(),
         "sources": ["Soshage"], "units": units, "nodes": nodes,
+        "unavailable_units": sorted(unavailable),
     }
 
 
@@ -1429,12 +1448,13 @@ async def _try_catalog(transport=None) -> Catalog | None:
         return None
 
 
-def _owned_rows(document: dict[str, Any]) -> list[list[Any]]:
-    """Return every owned character, including characters with no board progress."""
+def _owned_rows(document: dict[str, Any], catalog: Catalog | None = None) -> list[list[Any]]:
+    """Filter the display by catalogue without altering saved ownership or progress."""
     board_by_unit = {unit_uid: board for unit_uid, board in document["boards"]}
     return [
         [unit_uid, board_by_unit.get(unit_uid, {"selectedNodes": [], "plannedNodes": []})]
         for unit_uid, _rarity in document["units"]
+        if catalog is None or unit_uid not in catalog.unavailable_units
     ]
 
 
@@ -1501,7 +1521,7 @@ async def _overview(board_store: BoardStore, who: Identity, transport=None) -> s
     document, updated = _loaded(board_store, who)
     catalog = await _try_catalog(transport)
     progress_count, selected_count, planned_count = _percent_summary(document, catalog)
-    owned_rows = _owned_rows(document)
+    owned_rows = _owned_rows(document, catalog)
     selected_ids = [uid for _, board in document["boards"] for uid in board["selectedNodes"]]
     planned_ids = [uid for _, board in document["boards"] for uid in board["plannedNodes"]]
     selected_stats, selected_gold, selected_crayons, known_selected = _node_stats(selected_ids, catalog)
@@ -1543,7 +1563,7 @@ async def _unit_list(board_store: BoardStore, who: Identity, page_raw: str, tran
         raise ToolError("页码必须是正整数。") from None
     if page_number < 1 or page_number > 1000:
         raise ToolError("页码范围是 1～1000。")
-    rows = _owned_rows(document)
+    rows = _owned_rows(document, catalog)
     start = (page_number - 1) * 8
     lines = []
     for unit_uid, board in rows[start:start + 8]:
@@ -1635,7 +1655,7 @@ def _find_unit(
 async def _unit_detail(board_store: BoardStore, who: Identity, query: str, transport=None) -> str:
     document, _ = _loaded(board_store, who)
     catalog = await _try_catalog(transport)
-    unit_uid, board = _find_unit(_owned_rows(document), query, catalog)
+    unit_uid, board = _find_unit(_owned_rows(document, catalog), query, catalog)
     selected = board["selectedNodes"]
     planned = board["plannedNodes"]
     total = _percent_node_count(catalog.by_unit.get(unit_uid, ()), catalog) if catalog is not None else 0

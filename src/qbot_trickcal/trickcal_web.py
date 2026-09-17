@@ -839,7 +839,7 @@ class BoardWeb:
         ref = self.ref(session)
         saved = await run_in_threadpool(board.BoardStore(self.store).get, ref)
         document, updated = saved if saved is not None else (_empty_document(), 0.0)
-        owned = {unit_uid for unit_uid, _rarity in document["units"]}
+        owned = {unit_uid for unit_uid, _rarity in document["units"] if unit_uid in catalog.units}
         board_by_unit = {unit_uid: value for unit_uid, value in document["boards"]}
         selected_ids = [
             node_uid for _unit_uid, value in document["boards"]
@@ -908,7 +908,7 @@ class BoardWeb:
             })
         units.sort(key=lambda item: (not item["owned"], board._normal(item["name"] or item["alias"])))
 
-        owned_rows = board._owned_rows(document)
+        owned_rows = board._owned_rows(document, catalog)
         layer_summary = []
         for layer, label in board.LAYER_NAMES.items():
             groups = []

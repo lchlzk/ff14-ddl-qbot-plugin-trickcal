@@ -99,7 +99,70 @@ const CRAYON_PATH_CONFIG = {
 '''
 
 
+def availability_payload():
+    return trickcal_board._reduce_catalog(
+        [
+            {"uid": 10016, "name": "艾爾芬", "resource_name": "Erpin", "available": True},
+            {"uid": 10080, "name": "芭莉耶", "resource_name": "Barie", "available": False},
+        ],
+        [
+            {"uid": uid, "unit_uid": unit, "step": 1, "node_type": 3,
+             "stat_type": "88,89", "stat_value": "30,30", "need_gold": 70000,
+             "need_item_ids": "610004", "need_item_values": "2"}
+            for uid, unit in ((100, 10016), (200, 10080))
+        ],
+    )
+
+
 class BoardValidationTests(unittest.TestCase):
+    def test_unavailable_units_and_their_nodes_are_excluded_from_catalog_and_stats(self):
+        payload = availability_payload()
+        self.assertEqual(payload["unavailable_units"], [10080])
+        catalog = trickcal_board._catalog_from_payload(payload)
+        self.assertEqual(set(catalog.units), {10016})
+        self.assertEqual(set(catalog.nodes), {100})
+        self.assertEqual(set(catalog.by_unit), {10016})
+        stats, gold, crayons, count = trickcal_board._node_stats([100, 200], catalog)
+        self.assertEqual((stats, gold, crayons, count), ({88: 3, 89: 3}, 70000, 2, 1))
+        # Original metadata survives in the cache, not the selectable catalogue.
+        self.assertEqual(len(payload["units"]), 2)
+        self.assertEqual(len(payload["nodes"]), 2)
+
+    def test_supplement_cannot_restore_unavailable_role_by_alias_or_name(self):
+        for name, alias in (("另一译名", "Barie"), ("芭莉耶", "")):
+            with self.subTest(name=name, alias=alias):
+                payload = availability_payload()
+                payload["units"][1][1:3] = [name, alias]
+                merged = trickcal_board._merge_crayon_note(
+                    payload, crayon_note_source(), now=2_000_000_000, minimum_characters=1,
+                )
+                catalog = trickcal_board._catalog_from_payload(merged)
+                self.assertEqual(set(catalog.units), {10016})
+                self.assertNotIn(200, catalog.nodes)
+                self.assertEqual(len(merged["units"]), 2)
+
+    def test_old_or_missing_availability_cache_is_rejected_even_when_stale(self):
+        payload = availability_payload()
+        payload["version"] = 4
+        self.assertIsNone(trickcal_board._catalog_from_payload(payload, stale=True))
+        payload["version"] = trickcal_board.CATALOG_VERSION
+        del payload["unavailable_units"]
+        self.assertIsNone(trickcal_board._catalog_from_payload(payload))
+        payload["unavailable_units"] = [99999]
+        self.assertIsNone(trickcal_board._catalog_from_payload(payload))
+
+    def test_availability_round_trips_disk_and_released_role_reappears(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"BOT_DATA_DIR": temp}):
+            payload = availability_payload()
+            trickcal_board._write_disk_catalog(payload)
+            self.assertEqual(set(trickcal_board._read_disk_catalog().units), {10016})
+            self.assertEqual(set(trickcal_board._read_disk_catalog(allow_stale=True).units), {10016})
+            payload["unavailable_units"] = []
+            trickcal_board._write_disk_catalog(payload)
+            catalog = trickcal_board._read_disk_catalog()
+            self.assertEqual(set(catalog.units), {10016, 10080})
+            self.assertIn(200, catalog.nodes)
+
     def test_crayon_note_parser_reads_roles_paths_and_layer_rules_without_eval(self):
         characters, rules = trickcal_board._parse_crayon_note(
             crayon_note_source(), minimum_characters=1,
@@ -307,6 +370,35 @@ class BoardDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.group = Identity("bot", "group:one", "member", False)
         trickcal_board._catalog_cache.clear()
         trickcal_board._catalog_expiry.clear()
+
+    async def test_commands_filter_unavailable_without_erasing_saved_progress(self):
+        boards = trickcal_board.BoardStore(self.store)
+        raw = export_document(selected=[100], planned=[])
+        raw["units"].append([10080, 3])
+        raw["boards"].append([10080, {"selectedNodes": [200], "plannedNodes": []}])
+        boards.replace(self.group, json.dumps(raw))
+        before = boards.get(self.group)
+        payload = availability_payload()
+        with patch.object(trickcal_board, "catalogue", new_callable=AsyncMock) as fetch:
+            fetch.return_value = trickcal_board._catalog_from_payload(payload)
+            overview = await trickcal_board.dispatch(self.store, self.group, "蜡笔板")
+            self.assertIn("拥有角色：1 个", overview)
+            self.assertIn("百分比已点节点：1 个", overview)
+            listing = await trickcal_board.dispatch(self.store, self.group, "蜡笔板 角色列表")
+            self.assertNotIn("10080", listing)
+            self.assertNotIn("芭莉耶", listing)
+            for command in ("蜡笔板 点亮 Barie", "蜡笔板 加点 Barie 1 攻击"):
+                with self.assertRaises(ToolError):
+                    await trickcal_board.dispatch(self.store, self.group, command)
+            await trickcal_board.dispatch(self.store, self.group, "蜡笔板 点亮 全部")
+            await trickcal_board.dispatch(self.store, self.group, "蜡笔板 加点 全部 1 攻击")
+            self.assertEqual(boards.get(self.group)[0], before[0])
+            payload["unavailable_units"] = []
+            fetch.return_value = trickcal_board._catalog_from_payload(payload)
+            overview = await trickcal_board.dispatch(self.store, self.group, "蜡笔板")
+            self.assertIn("拥有角色：2 个", overview)
+            self.assertIn("百分比已点节点：2 个", overview)
+            self.assertEqual(boards.get(self.group)[0], before[0])
 
     async def test_web_login_supports_group_pairing_and_private_link(self):
         from qbot_trickcal.trickcal_web import BoardWeb
