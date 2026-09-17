@@ -14,6 +14,8 @@ const state = {
   hideSelected: false,
   hideUnselected: false,
   query: "",
+  collectionQuery: "",
+  collectionFilter: "all",
   layer: 1,
   group: "攻击",
   busy: false,
@@ -68,6 +70,11 @@ function jsonBody(value) {
 
 let toastTimer;
 function toast(message, error = false) {
+  if ($("#collectionDialog").open) {
+    const notice = $("#collectionNotice");
+    notice.textContent = message;
+    notice.classList.toggle("error", error);
+  }
   const item = $("#toast");
   item.textContent = message;
   item.classList.toggle("error", error);
@@ -83,6 +90,7 @@ function setBusy(value) {
 
 function showAuth(message = "") {
   closeMobilePanels();
+  if ($("#collectionDialog").open) $("#collectionDialog").close();
   $("#app").hidden = true;
   $("#authShell").hidden = false;
   $("#authError").textContent = message;
@@ -124,6 +132,7 @@ function confirmAction(title, copy) {
   const dialog = $("#confirmDialog");
   $("#confirmTitle").textContent = title;
   $("#confirmCopy").textContent = copy;
+  dialog.returnValue = "";
   dialog.showModal();
   return new Promise((resolve) => {
     dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
@@ -188,16 +197,20 @@ function renderLayers(data) {
   }
 }
 
+function matchesRoleQuery(unit, value) {
+  const query = value.trim().normalize("NFKC").toLocaleLowerCase("zh-CN");
+  const names = Array.isArray(unit.search_names) ? unit.search_names.join(" ") : "";
+  const text = `${unit.name} ${unit.alias} ${unit.id} ${names}`.normalize("NFKC").toLocaleLowerCase("zh-CN");
+  return !query || text.includes(query);
+}
+
 function unitMatches(unit) {
   const entry = activeNode(unit);
   if (!entry) return false;
   const selected = Boolean(unit.owned && entry.selected);
   if (state.hideSelected && selected) return false;
   if (state.hideUnselected && !selected) return false;
-  const query = state.query.trim().toLocaleLowerCase("zh-CN");
-  const names = Array.isArray(unit.search_names) ? unit.search_names.join(" ") : "";
-  const text = `${unit.name} ${unit.alias} ${unit.id} ${names}`.toLocaleLowerCase("zh-CN");
-  if (query && !text.includes(query)) return false;
+  if (!matchesRoleQuery(unit, state.query)) return false;
   if (state.filter === "owned") return unit.owned;
   if (state.filter === "unowned") return !unit.owned;
   return true;
@@ -249,6 +262,96 @@ function roleCard(unit) {
 
   if (entry.planned && !selected) card.append(node("span", "planned-flag", "计划"));
   return card;
+}
+
+function collectionCard(unit) {
+  const name = unit.name || unit.alias || `角色 ${unit.id}`;
+  const button = node("button", `collection-card${unit.owned ? " owned" : " unowned"}`);
+  button.type = "button";
+  button.dataset.collectionUnit = String(unit.id);
+  button.setAttribute("aria-pressed", String(unit.owned));
+  button.setAttribute("aria-label", `${name}，${unit.owned ? "已拥有，点击取消拥有" : "未拥有，点击点亮角色"}`);
+  button.title = name;
+  button.disabled = state.busy;
+  const personality = Number.isInteger(unit.personality) && unit.personality >= 0 && unit.personality <= 4
+    ? unit.personality : "neutral";
+  const avatar = node("span", `avatar-tile tone-${personality}`);
+  const glyph = node("span", "avatar-glyph", nameGlyph(unit));
+  avatar.append(glyph);
+  if (unit.portrait) {
+    const image = node("img", "avatar-image");
+    image.src = unit.portrait;
+    image.alt = "";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.addEventListener("load", () => { glyph.hidden = true; });
+    image.addEventListener("error", () => { image.hidden = true; });
+    avatar.append(image);
+  }
+  const caption = node("span", "collection-caption");
+  caption.append(node("strong", "", name), node("small", "", unit.owned ? "已拥有" : "未拥有"));
+  button.append(avatar, caption);
+  return button;
+}
+
+function renderCollection() {
+  if (!state.data || !$("#collectionDialog").open) return;
+  const all = state.data.units;
+  const owned = all.filter((unit) => unit.owned).length;
+  const summary = $("#collectionSummary");
+  summary.replaceChildren(
+    node("span", "", `全部 ${all.length}`),
+    node("span", "owned-count", `已拥有 ${owned}`),
+    node("span", "unowned-count", `未拥有 ${all.length - owned}`),
+  );
+  // Stable order: toggling ownership must not move the card under the pointer.
+  // This collection deliberately ignores the layer, stat and node filters.
+  const units = all.filter((unit) => matchesRoleQuery(unit, state.collectionQuery)
+    && (state.collectionFilter === "all" || (state.collectionFilter === "owned" ? unit.owned : !unit.owned)))
+    .sort((a, b) => a.id - b.id);
+  $("#collectionGrid").replaceChildren(...units.map(collectionCard));
+  $("#collectionEmpty").hidden = units.length > 0;
+  $("#collectionResultCount").textContent = `显示 ${units.length} / ${all.length} 个角色`;
+  document.querySelectorAll("#collectionFilterTabs button").forEach((button) => {
+    const active = button.dataset.collectionFilter === state.collectionFilter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function openCollection() {
+  if (!state.data || state.busy) return;
+  closeMobilePanels();
+  state.collectionQuery = "";
+  state.collectionFilter = "all";
+  $("#collectionSearchInput").value = "";
+  $("#collectionNotice").textContent = "更改自动保存，与机器人同步。";
+  $("#collectionNotice").classList.remove("error");
+  $("#collectionDialog").showModal();
+  document.body.classList.add("collection-visible");
+  renderCollection();
+  $(".collection-scroll").scrollTop = 0;
+  // Focus the close control rather than opening the phone's keyboard immediately.
+  $("#closeCollectionTopButton").focus();
+}
+
+async function handleCollectionAction(event) {
+  const button = event.target.closest("button[data-collection-unit]");
+  if (!button || state.busy) return;
+  const unit = state.data.units.find((item) => item.id === Number(button.dataset.collectionUnit));
+  if (!unit) return;
+  const owned = !unit.owned;
+  if (!owned) {
+    const approved = await confirmAction(`取消拥有“${unit.name}”？`,
+      "该角色会变为未拥有，同时清除它的已点和计划节点；其他角色不受影响。");
+    if (!approved) return;
+  }
+  await mutate(() => api(`units/${unit.id}/owned`, jsonBody({ owned })),
+    `${unit.name} · ${owned ? "已拥有（未增加节点）" : "已取消拥有"}`);
+  if ($("#collectionDialog").open) {
+    const next = document.querySelector(`#collectionGrid [data-collection-unit="${unit.id}"]`);
+    (next || $("#collectionSearchInput")).focus({ preventScroll: true });
+  }
 }
 
 function renderCurrentSummary() {
@@ -305,6 +408,7 @@ function render(data) {
   sync.classList.toggle("stale", data.catalog.stale);
   sync.querySelector("span").textContent = data.catalog.stale ? "目录暂用缓存" : "已与机器人同步";
   renderRoles();
+  renderCollection();
 }
 
 async function loadState() {
@@ -739,6 +843,27 @@ $("#nodeFilterTabs").addEventListener("click", (event) => {
   renderRoles();
 });
 $("#roleGrid").addEventListener("click", handleRoleAction);
+$("#openCollectionButton").addEventListener("click", openCollection);
+$("#collectionGrid").addEventListener("click", handleCollectionAction);
+$("#collectionSearchInput").addEventListener("input", (event) => {
+  state.collectionQuery = event.target.value;
+  renderCollection();
+});
+$("#collectionFilterTabs").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-collection-filter]");
+  if (!button || state.busy) return;
+  state.collectionFilter = button.dataset.collectionFilter;
+  renderCollection();
+});
+for (const id of ["#closeCollectionButton", "#closeCollectionTopButton"]) {
+  $(id).addEventListener("click", () => $("#collectionDialog").close());
+}
+$("#collectionDialog").addEventListener("close", () => {
+  document.body.classList.remove("collection-visible");
+  if (window.matchMedia("(max-width: 920px)").matches) {
+    document.querySelector('[data-mobile-panel="resource"]').focus();
+  }
+});
 $("#bulkAddButton").addEventListener("click", () => bulk(true));
 $("#bulkRemoveButton").addEventListener("click", () => bulk(false));
 $("#ownAllButton").addEventListener("click", async () => {

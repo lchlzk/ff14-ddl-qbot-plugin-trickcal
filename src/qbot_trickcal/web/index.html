@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="description" content="嘟嘟脸个人蜡笔板管理">
   <title>我的蜡笔板</title>
-  <link rel="stylesheet" href="/tr-board/assets/board.css?v=20260917-api1">
+  <link rel="stylesheet" href="/tr-board/assets/board.css?v=20260917-collection1">
 </head>
 <body>
   <section class="auth-shell" id="authShell" aria-labelledby="authTitle">
@@ -153,7 +153,8 @@
 
         <section class="quick-actions" aria-labelledby="quickTitle">
           <h3 id="quickTitle">角色管理</h3>
-          <button class="button primary wide" id="ownAllButton" type="button">点亮所有角色</button>
+          <p>集中查看、点亮你已拥有的角色。</p>
+          <button class="button primary wide" id="openCollectionButton" type="button" aria-haspopup="dialog" aria-controls="collectionDialog">角色点亮板</button>
         </section>
 
         <section class="account-actions" aria-labelledby="accountTitle">
@@ -181,6 +182,42 @@
     <button class="mobile-backdrop" id="mobileBackdrop" type="button" aria-label="关闭辅助面板" hidden></button>
   </div>
 
+  <dialog id="collectionDialog" class="collection-dialog" aria-labelledby="collectionTitle" aria-describedby="collectionHelp">
+    <header class="collection-header">
+      <div>
+        <p class="eyebrow">MY CHARACTERS</p>
+        <h2 id="collectionTitle">角色点亮板</h2>
+      </div>
+      <button class="button ghost collection-close" id="closeCollectionTopButton" type="button" aria-label="关闭角色点亮板">×</button>
+    </header>
+    <div class="collection-toolbar">
+      <p id="collectionHelp">亮显 = 已拥有，灰色 = 未拥有。点击头像切换拥有状态，不会自动加点。</p>
+      <div class="collection-summary" id="collectionSummary" aria-live="polite"></div>
+      <div class="collection-controls">
+        <label class="search-field">
+          <span class="sr-only">搜索点亮板角色</span>
+          <input id="collectionSearchInput" type="search" maxlength="60" placeholder="搜索角色名称或别名">
+        </label>
+        <div class="filter-tabs" id="collectionFilterTabs" role="group" aria-label="点亮板拥有状态筛选">
+          <button class="active" data-collection-filter="all" type="button" aria-pressed="true">全部</button>
+          <button data-collection-filter="owned" type="button" aria-pressed="false">已拥有</button>
+          <button data-collection-filter="unowned" type="button" aria-pressed="false">未拥有</button>
+        </div>
+      </div>
+      <p class="collection-result" id="collectionResultCount" aria-live="polite"></p>
+    </div>
+    <div class="collection-scroll">
+      <div class="collection-grid" id="collectionGrid" aria-label="角色拥有列表"></div>
+      <p class="collection-empty" id="collectionEmpty" hidden>没有符合条件的角色，试试其他名称或筛选。</p>
+    </div>
+    <footer class="collection-footer">
+      <p id="collectionNotice" role="status">更改自动保存，与机器人同步。</p>
+      <div>
+        <button class="button soft" id="ownAllButton" type="button">点亮所有角色</button>
+        <button class="button primary" id="closeCollectionButton" type="button">完成</button>
+      </div>
+    </footer>
+  </dialog>
   <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmTitle">
     <form method="dialog">
       <span class="dialog-icon" aria-hidden="true">!</span>
@@ -224,6 +261,6 @@
     </div>
   </dialog>
   <div class="toast" id="toast" role="status" hidden></div>
-  <script src="/tr-board/assets/board.js?v=20260917-api1" defer></script>
+  <script src="/tr-board/assets/board.js?v=20260917-collection1" defer></script>
 </body>
 </html>
