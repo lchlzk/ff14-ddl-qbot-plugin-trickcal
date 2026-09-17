@@ -15,6 +15,8 @@ from bot_tools import (
     community,
     qq_buttons,
     qq_image_upload,
+)
+from qbot_trickcal import (
     trickcal as service,
     trickcal_board,
     trickcal_media,
@@ -22,6 +24,7 @@ from bot_tools import (
 from bot_tools.storage import ToolError
 from message_ui import error_panel, public_error_message
 from bot_tools.plugin_runtime import bounded, command_eligible, get_store, identity
+from qbot_trickcal.runtime import install_web
 
 
 tr = on_command("tr", aliases={"trickcal"}, force_whitespace=True,

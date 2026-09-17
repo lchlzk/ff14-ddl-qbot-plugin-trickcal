@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="嘟嘟脸个人蜡笔板管理">
+  <title>我的蜡笔板</title>
+  <link rel="stylesheet" href="/tr-board/assets/board.css?v=20260917-api1">
+</head>
+<body>
+  <section class="auth-shell" id="authShell" aria-labelledby="authTitle">
+    <div class="auth-card">
+      <div class="crayon-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+      <p class="eyebrow">TRICKCAL BOARD</p>
+      <h1 id="authTitle">登录你的蜡笔板</h1>
+      <p id="authCopy">登录后即可管理你自己的角色与蜡笔板节点。</p>
+      <div class="auth-options">
+        <section class="auth-pane" aria-labelledby="accountLoginTitle">
+          <h2 id="accountLoginTitle">已有账号</h2>
+          <form id="accountLoginForm" class="auth-form">
+            <label><span>蜡笔板账号</span><input name="username" type="text" minlength="3" maxlength="32" autocomplete="username" required></label>
+            <label><span>密码</span><input name="password" type="password" minlength="10" maxlength="128" autocomplete="current-password" required></label>
+            <button class="button primary wide" type="submit">登录蜡笔板</button>
+          </form>
+        </section>
+        <section class="auth-pane" aria-labelledby="pairingTitle">
+          <h2 id="pairingTitle">首次绑定或重新验证</h2>
+          <p>先在 QQ 群发送 <code>/tr 蜡笔板 网页</code>，把机器人给出的绑定码填到这里。</p>
+          <form id="pairingStartForm" class="auth-form">
+            <label><span>群聊绑定码</span><input name="code" class="code-input" type="text" minlength="16" maxlength="16" autocomplete="one-time-code" spellcheck="false" required></label>
+            <button class="button soft wide" type="submit">生成群聊回执码</button>
+          </form>
+          <div class="pairing-confirm" id="pairingConfirm" hidden>
+            <span>请由本人回到刚才的群发送</span>
+            <strong id="confirmationCommand"></strong>
+            <p id="pairingStatus">正在等待群聊确认……</p>
+            <button class="button ghost wide" id="retryButton" type="button">我已发送，立即检查</button>
+          </div>
+          <form id="accountCreateForm" class="auth-form account-create" hidden>
+            <h3>身份已确认，创建蜡笔板账号</h3>
+            <label><span>新账号</span><input name="username" type="text" minlength="3" maxlength="32" autocomplete="username" required></label>
+            <label><span>新密码</span><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
+            <label><span>再次输入密码</span><input name="password_confirm" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
+            <button class="button primary wide" type="submit">创建账号并进入蜡笔板</button>
+          </form>
+        </section>
+      </div>
+      <p class="auth-error" id="authError" role="alert"></p>
+    </div>
+  </section>
+
+  <div class="app" id="app" hidden>
+    <header class="topbar">
+      <a class="brand" href="/tr-board/" aria-label="我的蜡笔板首页">
+        <span class="brand-icon" aria-hidden="true">🖍</span>
+        <span><b>我的蜡笔板</b><small>与 QQ 机器人实时同步</small></span>
+      </a>
+      <div class="mobile-panel-actions" aria-label="打开辅助面板">
+        <button type="button" data-mobile-panel="overview" aria-controls="overviewPanel" aria-expanded="false">总览</button>
+        <button type="button" data-mobile-panel="resource" aria-controls="resourcePanel" aria-expanded="false">管理</button>
+      </div>
+      <div class="sync-pill" id="syncPill"><i></i><span>正在同步</span></div>
+    </header>
+
+    <main class="board-layout">
+      <aside class="side-panel overview-panel" id="overviewPanel" aria-labelledby="overviewTitle">
+        <button class="mobile-panel-close" type="button" data-mobile-close aria-label="关闭总览面板">×</button>
+        <p class="eyebrow">BOARD OVERVIEW</p>
+        <h2 id="overviewTitle">层级总览</h2>
+        <div class="total-progress">
+          <strong id="totalPercent">0%</strong>
+          <span id="totalProgressCopy">已点 0 / 0</span>
+          <progress id="totalProgress" max="1" value="0" aria-label="百分比节点总完成度"></progress>
+        </div>
+        <div class="layer-overview" id="layerOverview"></div>
+        <div class="bonus-panel">
+          <h3>当前累计加成</h3>
+          <div id="bonusList" class="bonus-list"></div>
+        </div>
+      </aside>
+
+      <section class="board-panel" aria-labelledby="boardTitle">
+        <div class="layer-tabs" id="layerTabs" role="group" aria-label="选择蜡笔板层数">
+          <button class="active" type="button" data-layer="1">第一层</button>
+          <button type="button" data-layer="2">第二层</button>
+          <button type="button" data-layer="3">第三层</button>
+        </div>
+
+        <div class="board-toolbar">
+          <div>
+            <p class="eyebrow">QUICK MARK</p>
+            <h1 id="boardTitle">第一层 · 攻击力</h1>
+            <p>直接点击角色卡片，绿色边框表示已经点亮。</p>
+          </div>
+          <div class="current-score" aria-live="polite">
+            <strong id="currentCount">0 / 0</strong>
+            <span id="currentRate">当前完成 0%</span>
+          </div>
+        </div>
+
+        <div class="group-tabs" id="groupTabs" role="group" aria-label="选择百分比属性">
+          <button class="active" type="button" data-group="攻击"><span aria-hidden="true">⚔</span>攻击力</button>
+          <button type="button" data-group="防御"><span aria-hidden="true">◆</span>防御力</button>
+          <button type="button" data-group="生命"><span aria-hidden="true">♥</span>血量</button>
+          <button type="button" data-group="暴击"><span aria-hidden="true">✦</span>暴击/暴伤</button>
+          <button type="button" data-group="暴抗"><span aria-hidden="true">◈</span>暴抗/暴伤抗</button>
+        </div>
+
+        <div class="role-controls">
+          <label class="search-field">
+            <span class="sr-only">搜索角色</span>
+            <input id="searchInput" type="search" maxlength="60" placeholder="搜索角色名称">
+          </label>
+          <div class="role-filter-controls">
+            <div class="node-filter-tabs" id="nodeFilterTabs" role="group" aria-label="百分比节点筛选">
+              <button data-node-filter="selected" type="button" aria-pressed="false">隐藏已加点</button>
+              <button data-node-filter="unselected" type="button" aria-pressed="false">隐藏未加点</button>
+            </div>
+            <div class="filter-tabs" id="filterTabs" role="group" aria-label="角色筛选">
+              <button data-filter="all" type="button">全部</button>
+              <button class="active" data-filter="owned" type="button">已拥有</button>
+              <button data-filter="unowned" type="button">未拥有</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="result-line">
+          <span id="resultCount">0 个角色有此节点</span>
+          <span id="catalogNote"></span>
+        </div>
+        <div class="character-grid" id="roleGrid" aria-live="polite"></div>
+        <div class="empty-state" id="emptyState" hidden>
+          <span aria-hidden="true">✦</span>
+          <strong>这里没有符合条件的角色</strong>
+          <p>可以切换“全部”或换一个属性查看。</p>
+        </div>
+
+        <footer class="board-footer">
+          <div class="current-cost" id="currentCost">当前已用金币 0 · 金蜡笔 0</div>
+          <div class="bulk-actions">
+            <button class="button soft" id="bulkRemoveButton" type="button">撤销当前属性</button>
+            <button class="button primary" id="bulkAddButton" type="button">点亮当前属性</button>
+          </div>
+        </footer>
+      </section>
+
+      <aside class="side-panel resource-panel" id="resourcePanel" aria-labelledby="resourceTitle">
+        <button class="mobile-panel-close" type="button" data-mobile-close aria-label="关闭管理面板">×</button>
+        <p class="eyebrow">MY COLLECTION</p>
+        <h2 id="resourceTitle">角色与资源</h2>
+        <div class="resource-list" id="metricGrid" aria-live="polite"></div>
+
+        <section class="quick-actions" aria-labelledby="quickTitle">
+          <h3 id="quickTitle">角色管理</h3>
+          <button class="button primary wide" id="ownAllButton" type="button">点亮所有角色</button>
+        </section>
+
+        <section class="account-actions" aria-labelledby="accountTitle">
+          <h3 id="accountTitle">账号与机器人</h3>
+          <p>让其他机器人访问当前账号的同一份蜡笔板。</p>
+          <button class="button soft wide" id="issueBotBindingButton" type="button">绑定新机器人</button>
+        </section>
+
+        <section class="api-actions" aria-labelledby="apiTitle">
+          <h3 id="apiTitle">第三方 API</h3>
+          <p>生成只读令牌，让其他应用读取你的角色与蜡笔板进度。</p>
+          <button class="button soft wide" id="manageApiTokensButton" type="button">管理 API 令牌</button>
+          <a class="button ghost wide api-doc-link" href="/tr-board/api-docs" target="_blank" rel="noopener">查看 API 文档</a>
+        </section>
+
+        <section class="data-actions" aria-labelledby="dataTitle">
+          <h3 id="dataTitle">数据管理</h3>
+          <input id="importFile" type="file" accept="application/json,.json" hidden>
+          <button class="button soft wide" id="importButton" type="button">导入 JSON</button>
+          <button class="button soft wide" id="exportButton" type="button">导出备份</button>
+          <button class="button ghost wide" id="logoutButton" type="button">退出网页</button>
+        </section>
+      </aside>
+    </main>
+    <button class="mobile-backdrop" id="mobileBackdrop" type="button" aria-label="关闭辅助面板" hidden></button>
+  </div>
+
+  <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmTitle">
+    <form method="dialog">
+      <span class="dialog-icon" aria-hidden="true">!</span>
+      <h2 id="confirmTitle">确认操作</h2>
+      <p id="confirmCopy"></p>
+      <div class="dialog-actions">
+        <button class="button soft" value="cancel">取消</button>
+        <button class="button danger" value="confirm">确认</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="botBindingDialog" class="confirm-dialog bot-binding-dialog" aria-labelledby="botBindingTitle">
+    <form method="dialog">
+      <span class="dialog-icon" aria-hidden="true">↗</span>
+      <h2 id="botBindingTitle">绑定新机器人</h2>
+      <p>请在 10 分钟内，用你本人 QQ 前往新机器人所在的群发送：</p>
+      <strong class="binding-command" id="botBindingCommand"></strong>
+      <p id="botBindingExpiry">绑定成功后，两个机器人和网页会共用同一份蜡笔板。</p>
+      <div class="dialog-actions">
+        <button class="button soft" id="copyBotBindingButton" type="button">复制命令</button>
+        <button class="button primary" value="close">完成</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="apiTokenDialog" class="confirm-dialog api-token-dialog" aria-labelledby="apiTokenTitle">
+    <div class="api-token-content">
+      <h2 id="apiTokenTitle">只读 API 令牌</h2>
+      <p>令牌只允许读取你的蜡笔板，不允许修改。请只交给你信任的应用；泄露后可随时撤销。</p>
+      <label class="api-token-label"><span>用途名称</span><input id="apiTokenLabel" maxlength="40" placeholder="例如：我的统计工具"></label>
+      <button class="button primary wide" id="createApiTokenButton" type="button">生成令牌（90 天有效）</button>
+      <div id="issuedApiToken" class="issued-api-token" hidden>
+        <strong>请立即复制；关闭后不会再次显示</strong>
+        <code id="apiTokenValue"></code>
+        <button class="button soft wide" id="copyApiTokenButton" type="button">复制令牌</button>
+      </div>
+      <h3>有效令牌</h3>
+      <div id="apiTokenList" class="api-token-list"></div>
+      <p>请求地址：<code>/api/v1/tr-board/board</code>、<code>/api/v1/tr-board/catalog</code><br>请求头：<code>Authorization: Bearer 你的令牌</code></p>
+      <p><a href="/tr-board/api-docs" target="_blank" rel="noopener">查看完整 API 文档 ↗</a></p>
+      <button class="button ghost wide" id="closeApiTokenDialogButton" type="button">完成</button>
+    </div>
+  </dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="/tr-board/assets/board.js?v=20260917-api1" defer></script>
+</body>
+</html>

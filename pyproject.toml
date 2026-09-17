@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ff14-ddl-qbot-plugin-trickcal"
-version = "0.1.0"
+version = "0.2.0"
 description = "嘟嘟脸与蜡笔板 plugin for ff14-ddl-qbot"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -14,4 +14,7 @@ dependencies = ["nonebot2>=2.5,<3", "nonebot-adapter-qq>=1.7,<2"]
 [tool.setuptools.packages.find]
 where = ["src"]
 namespaces = true
-include = ["plugins*"]
+include = ["plugins*", "qbot_trickcal*"]
+
+[tool.setuptools.package-data]
+qbot_trickcal = ["*.json", "web/*.html", "web/*.css", "web/*.js"]

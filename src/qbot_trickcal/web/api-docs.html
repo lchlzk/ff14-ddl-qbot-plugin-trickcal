@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="嘟嘟脸蜡笔板第三方只读 API 文档">
+  <title>蜡笔板 API 文档</title>
+  <link rel="stylesheet" href="/tr-board/assets/api-docs.css?v=20260917-docs1">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/tr-board/"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>我的蜡笔板</span></a>
+    <a class="top-link" href="/tr-board/">打开蜡笔板 <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <div class="layout">
+    <nav class="contents" aria-label="文档目录">
+      <p>文档目录</p>
+      <a href="#overview">概览</a>
+      <a href="#quick-start">快速接入</a>
+      <a href="#authentication">鉴权与限制</a>
+      <a href="#catalog">角色与节点目录</a>
+      <a href="#board">个人蜡笔板</a>
+      <a href="#fields">字段说明</a>
+      <a href="#errors">错误与安全</a>
+    </nav>
+
+    <main>
+      <section class="hero" id="overview">
+        <p class="eyebrow">TRICKCAL BOARD · API V1</p>
+        <h1>让你的蜡笔板<br><span>接入更多应用。</span></h1>
+        <p class="hero-copy">第三方程序可以读取用户的角色目录与蜡笔板进度。当前版本仅提供只读接口；个人数据由用户自己的令牌授权。</p>
+        <div class="hero-meta"><span>HTTPS</span><span>JSON</span><span>Bearer 令牌</span><span>只读</span></div>
+      </section>
+
+      <section class="section" id="quick-start">
+        <div class="section-heading"><span class="step">01</span><h2>快速接入</h2></div>
+        <ol class="steps">
+          <li>用户登录<a href="/tr-board/">蜡笔板网页</a>；如尚无账号，先按网页提示在 QQ 群完成绑定。</li>
+          <li>在右侧「第三方 API」中点击「管理 API 令牌」，填写用途并生成令牌。令牌只显示一次。</li>
+          <li>由你的服务器发送以下请求。不要把令牌放在浏览器脚本、公开仓库、网址参数或群消息里。</li>
+        </ol>
+        <div class="code-head"><span>请求示例 · cURL</span></div>
+        <pre><code>curl --request GET \
+  --header 'Authorization: Bearer &lt;你的令牌&gt;' \
+  'https://qbot-l.yizhixiaogame.com/api/v1/tr-board/board'</code></pre>
+        <p class="hint">基础地址：<code>https://qbot-l.yizhixiaogame.com</code>。请求与响应均使用 UTF-8；成功响应为 <code>{"ok":true,"data":...}</code>。</p>
+      </section>
+
+      <section class="section" id="authentication">
+        <div class="section-heading"><span class="step">02</span><h2>鉴权与限制</h2></div>
+        <div class="info-grid">
+          <div class="info-card"><strong>发送方式</strong><p><code>Authorization: Bearer &lt;令牌&gt;</code> 请求头；不支持 Cookie 或查询参数传令牌。</p></div>
+          <div class="info-card"><strong>有效期</strong><p>生成后 90 天。每个蜡笔板账号最多同时保留 5 个有效令牌，可在网页随时撤销。</p></div>
+          <div class="info-card"><strong>速率</strong><p>每个令牌最多 60 次／分钟；超过后返回 <code>429</code> 与 <code>Retry-After: 60</code>。</p></div>
+          <div class="info-card"><strong>权限</strong><p>仅能读取令牌所属账号的蜡笔板，以及公开角色目录；不能添加角色或修改节点。</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="catalog">
+        <div class="section-heading"><span class="step">03</span><h2>角色与节点目录</h2></div>
+        <div class="endpoint"><span class="method">GET</span><code>/api/v1/tr-board/catalog</code></div>
+        <p>返回公开角色目录和各角色三层的百分比节点、金币及金蜡笔成本。即使只读取公开目录，也仍需有效令牌。响应不含用户的拥有或加点状态。</p>
+        <div class="code-head"><span>响应示意 · JSON（仅展示一个角色与节点）</span></div>
+        <pre><code>{
+  "ok": true,
+  "data": {
+    "version": 1,
+    "catalog": {
+      "fetched": 1780000000,
+      "stale": false,
+      "sources": ["Soshage", "Crayon-note"]
+    },
+    "units": [
+      {
+        "id": 10016,
+        "name": "艾尔芬",
+        "alias": "Erpin",
+        "search_names": ["艾尔芬", "艾爾芬", "Erpin"],
+        "personality": 0,
+        "portrait": "/tr-board/assets/portraits/10016.webp",
+        "layers": [
+          {
+            "layer": 1,
+            "label": "第一层",
+            "nodes": [
+              {"id": 1, "group": "攻击", "label": "攻击", "gold": 100, "gold_crayons": 1}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+        <p class="hint">上面的 ID、数值与目录时间只是格式示例，不代表实时数据；请以接口返回为准。</p>
+      </section>
+
+      <section class="section" id="board">
+        <div class="section-heading"><span class="step">04</span><h2>个人蜡笔板</h2></div>
+        <div class="endpoint"><span class="method">GET</span><code>/api/v1/tr-board/board</code></div>
+        <p>返回令牌所属账号的角色拥有状态、已点及计划节点、分层统计和资源合计。绑定了多个机器人时，读取的是同一份共享蜡笔板。</p>
+        <div class="code-head"><span>响应结构 · JSON（省略其余角色与统计字段）</span></div>
+        <pre><code>{
+  "ok": true,
+  "data": {
+    "version": 1,
+    "catalog": {"fetched": 1780000000, "stale": false, "sources": ["Soshage"]},
+    "summary": {
+      "owned": 1, "catalog_units": 76, "progressed": 1,
+      "selected": 1, "total": 2, "planned": 0,
+      "gold": 100, "gold_crayons": 1,
+      "planned_gold": 0, "planned_gold_crayons": 0,
+      "updated": 1780000000, "stats": []
+    },
+    "layers": [
+      {"layer": 1, "label": "第一层", "groups": [
+        {"group": "攻击", "label": "攻击", "selected": 1, "total": 1}
+      ]}
+    ],
+    "units": [
+      {
+        "id": 10016, "name": "艾尔芬", "alias": "Erpin",
+        "search_names": ["艾尔芬", "Erpin"],
+        "personality": 0,
+        "portrait": "/tr-board/assets/portraits/10016.webp",
+        "owned": true, "selected": 1, "total": 2,
+        "layers": [
+          {"layer": 1, "label": "第一层", "nodes": [
+            {"id": 1, "group": "攻击", "label": "攻击",
+             "selected": true, "planned": false, "gold": 100, "gold_crayons": 1}
+          ]}
+        ]
+      }
+    ]
+  }
+}</code></pre>
+        <p class="hint">这是结构示意，不是完整实时数据；目录与加点状态会变化。响应不会包含 QQ 原始 OpenID、网页 Session 或 CSRF 值。</p>
+      </section>
+
+      <section class="section" id="fields">
+        <div class="section-heading"><span class="step">05</span><h2>字段说明</h2></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>字段</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td><code>data.version</code></td><td>响应结构版本，当前为 <code>1</code>。接入方应先检查版本。</td></tr>
+            <tr><td><code>catalog.fetched / stale / sources</code></td><td>目录抓取时间（Unix 秒）、是否使用旧缓存、目录来源。</td></tr>
+            <tr><td><code>units[].id / name / alias</code></td><td>角色数字 ID、简体显示名、英文别名。请用 ID 关联角色，不要依赖显示名。</td></tr>
+            <tr><td><code>units[].search_names / personality / portrait</code></td><td>搜索别名、性格编号、站内立绘相对路径。立绘可用基础地址补全。</td></tr>
+            <tr><td><code>units[].owned / selected / total</code></td><td>是否拥有、已点百分比节点数、该角色可用百分比节点总数；仅 <code>board</code> 提供。</td></tr>
+            <tr><td><code>units[].layers[].nodes[]</code></td><td>每层节点的 <code>id</code>、<code>group</code>、<code>label</code>、<code>gold</code>、<code>gold_crayons</code>；<code>board</code> 另有布尔值 <code>selected</code> 和 <code>planned</code>。</td></tr>
+            <tr><td><code>summary</code></td><td>个人汇总：拥有角色 <code>owned</code>、有进度角色 <code>progressed</code>、已点 <code>selected</code>／总节点 <code>total</code>／计划 <code>planned</code>、已用与计划金币及金蜡笔、更新时间 <code>updated</code>、累计加成描述 <code>stats</code>。</td></tr>
+            <tr><td><code>layers[].groups[]</code></td><td>按层与属性分组的已点数 <code>selected</code> 和可点总数 <code>total</code>；仅统计已拥有角色的百分比节点。</td></tr>
+          </tbody>
+        </table></div>
+        <p class="hint">节点分组包括攻击、防御、生命、暴击、暴抗；<code>label</code> 是界面展示名称。普通固定数值节点不在当前 API 目录内。</p>
+      </section>
+
+      <section class="section" id="errors">
+        <div class="section-heading"><span class="step">06</span><h2>错误与安全</h2></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>HTTP 状态</th><th>处理方式</th></tr></thead>
+          <tbody>
+            <tr><td><code>200</code></td><td>成功；JSON 为 <code>{"ok":true,"data":...}</code>。</td></tr>
+            <tr><td><code>401</code></td><td>缺少、无效、过期或已撤销令牌。请用户在网页重新授权；不要无限重试。</td></tr>
+            <tr><td><code>429</code></td><td>超过每令牌每分钟 60 次的限制；按 <code>Retry-After</code> 等待后重试。</td></tr>
+            <tr><td><code>405</code></td><td>请求方法不受支持；这两个公开接口只接受 <code>GET</code>。</td></tr>
+          </tbody>
+        </table></div>
+        <div class="notice"><strong>接入建议</strong><p>只在可信后端保存令牌，使用 HTTPS，不记录完整 Authorization 请求头。撤销后令牌立即失效。当前未开放浏览器跨站调用（CORS），也未开放第三方写入接口。</p></div>
+      </section>
+
+      <footer>蜡笔板 API v1 · <a href="/tr-board/">返回我的蜡笔板</a></footer>
+    </main>
+  </div>
+</body>
+</html>
